@@ -1,17 +1,16 @@
 #include "term.h"
+#include "regex.h"
 
-static void child_ready(VteTerminal *terminal, GPid pid, GError *error,
-                        gpointer user_data) {
+void child_ready(VteTerminal *terminal, GPid pid, GError *error,
+                 gpointer user_data) {
     if (!terminal)
         return;
     if (pid == -1)
         gtk_main_quit();
 }
 
-void what_the_fuck() { gtk_main_quit(); }
-
 void print_help(char *error) {
-    printf("%s\n", error);
+    fprintf(stderr, "%s\n", error);
     printf("Usage:\n"
            "  vterm [OPTION…]\n"
            "\n"
@@ -79,7 +78,7 @@ void handle_args(int argc, char **argv, GtkWidget *window, char **cmd) {
         }
 }
 
-static void set_font_size(VteTerminal *terminal, gint delta) {
+void set_font_size(VteTerminal *terminal, gint delta) {
     PangoFontDescription *new_font =
         pango_font_description_copy(vte_terminal_get_font(terminal));
     if (!new_font)
@@ -100,9 +99,26 @@ int equal_struct(struct key_comb a, struct key_comb b) {
     return 1;
 }
 
-static gboolean on_key_press(GtkWidget *terminal, GdkEventKey *event,
-                             gpointer user_data) {
+gboolean on_mouse_press(GtkWidget *_terminal, GdkEventButton *_event) {
+    VteTerminal *terminal = VTE_TERMINAL(_terminal);
+    GdkEvent *event = (GdkEvent *)_event;
+    char *uri = NULL;
 
+    if ((uri = vte_terminal_hyperlink_check_event(terminal, event))) {
+        return TRUE;
+    }
+    if ((uri = vte_terminal_match_check_event(terminal, event, NULL))) {
+        char *cmd = malloc(strlen("/bin/firefox ") + strlen(uri) + 1);
+        sprintf(cmd, "/bin/firefox %s", uri);
+        FILE *fp = popen(cmd, "r");
+        if (!fp)
+            perror("popen");
+        return TRUE;
+    }
+    return FALSE;
+}
+
+gboolean on_key_press(GtkWidget *terminal, GdkEventKey *event) {
     if (event->type == GDK_KEY_RELEASE)
         return FALSE;
 
@@ -154,6 +170,16 @@ int main(int argc, char **argv) {
     vte_terminal_set_colors(VTE_TERMINAL(terminal), &fg_color, &bg_color,
                             PALETTE_16, 16);
 
+    // hyperlink
+    vte_terminal_set_allow_hyperlink(VTE_TERMINAL(terminal), TRUE);
+    //char *url_regex = "([-a-zA-Z0-9@:%_\\+~#?&\\/\\/=]*\\.[-a-zA-Z0-9@:%_\\+~#?&\\/\\/=]+)+";
+    VteRegex *regex_as_is =
+        vte_regex_new_for_match(REGEX_URL_AS_IS, -1, PCRE2_MULTILINE, NULL);
+    vte_terminal_match_add_regex(VTE_TERMINAL(terminal), regex_as_is, 0);
+    VteRegex *regex_http =
+        vte_regex_new_for_match(REGEX_URL_HTTP, -1, PCRE2_MULTILINE, NULL);
+    vte_terminal_match_add_regex(VTE_TERMINAL(terminal), regex_http, 0);
+
     // set font
     PangoFontDescription *font =
         pango_font_description_from_string(DEFAULT_FONT);
@@ -179,15 +205,16 @@ int main(int argc, char **argv) {
                              NULL);       /* user_data */
 
     // Connect some signals
-    g_signal_connect(window, "delete-event", what_the_fuck, NULL);
-    g_signal_connect(terminal, "child-exited", what_the_fuck, NULL);
+    g_signal_connect(window, "delete-event", gtk_main_quit, NULL);
+    g_signal_connect(terminal, "child-exited", gtk_main_quit, NULL);
     g_signal_connect(terminal, "key-press-event", G_CALLBACK(on_key_press),
-                     GTK_WINDOW(window));
+                     NULL);
+    g_signal_connect(terminal, "button-press-event", G_CALLBACK(on_mouse_press),
+                     NULL);
 
     // Put widgets together and run the main loop
     gtk_container_add(GTK_CONTAINER(window), terminal);
     gtk_widget_show_all(window);
     gtk_main();
-
-    free(cmd);
+    return 0;
 }

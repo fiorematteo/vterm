@@ -1,5 +1,6 @@
 #include <vte/vte.h>
 #include <regex.h>
+#define PCRE2_MULTILINE 0x00000400u
 
 #define CLR_R(x) (((x)&0xff0000) >> 16)
 #define CLR_G(x) (((x)&0x00ff00) >> 8)
@@ -33,7 +34,6 @@
     }
 
 #define DEFAULT_FONT "DejaVuSansMono Nerd Font 11"
-//"DejaVu Sans Mono for Powerline 11"
 
 struct key_comb {
     int mod_key;
